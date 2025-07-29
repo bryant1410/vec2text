@@ -7,7 +7,6 @@ import transformers
 from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
 
 from vec2text.models import (
-    EMBEDDER_MODEL_NAMES,
     EMBEDDING_TRANSFORM_STRATEGIES,
     FREEZE_STRATEGIES,
 )
