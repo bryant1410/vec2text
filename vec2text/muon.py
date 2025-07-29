@@ -1,3 +1,4 @@
+# From: https://github.com/pytorch/pytorch/pull/153048/files#diff-c7ad8796c5b955f2cfd88c46b78fbec365038190bdcd66723935c4fbf80e8550
 # mypy: allow-untyped-defs
 from typing import Optional, Union
 
