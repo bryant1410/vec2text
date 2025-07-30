@@ -16,6 +16,7 @@ import tqdm
 import transformers
 
 import vec2text
+from vec2text.muon import Muon
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class BaseTrainer(transformers.Trainer):
         # self.metric_bertscore = evaluate.load("bertscore")
         self.metric_rouge = evaluate.load("rouge")
         self.additional_metrics = []
+        self.optimizer_cls_and_kwargs = (Muon, {"lr": self.args.learning_rate, "weight_decay": self.args.weight_decay})
 
         self.gen_kwargs = {
             "early_stopping": False,
