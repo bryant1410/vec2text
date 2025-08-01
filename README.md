@@ -47,7 +47,7 @@ corrector_model = vec2text.models.CorrectorEncoderModel.from_pretrained("jxm/gtr
 corrector = vec2text.load_corrector(inversion_model, corrector_model)
 ```
 
-Both `vec2text.models.InversionModel` and `vec2text.models.CorrectorEncoderModel` classes inherit `transformers.PreTrainedModel` therefore you can pass in a huggingface model name or path to a local directory.
+Both `vec2text.models.InversionModel` and `vec2text.models.CorrectorEncoderModel` classes inherit `transformers.PreTrainedModel` therefore you can pass in a Hugging Face model name or path to a local directory.
 
 ### Invert text with `invert_strings`
 
@@ -229,16 +229,59 @@ Steps 2 and 3 happen together by simply executing the training script. Our code 
 
 Here's how you might train the zero-step model for GTR:
 ```bash
-python run.py --per_device_train_batch_size 128 --per_device_eval_batch_size 128 --max_seq_length 128 --model_name_or_path t5-base --dataset_name msmarco --embedder_model_name gtr_base --num_repeat_tokens 16 --embedder_no_grad True --num_train_epochs 100 --max_eval_samples 500 --eval_steps 20000 --warmup_steps 10000 --bf16=1 --use_wandb=1 --use_frozen_embeddings_as_input True --experiment inversion --lr_scheduler_type constant_with_warmup --exp_group_name oct-gtr --learning_rate 0.001 --output_dir ./saves/gtr-1 --save_steps 2000
+python run.py \
+  --per_device_train_batch_size 128 \
+  --per_device_eval_batch_size 128 \
+  --max_seq_length 128 \
+  --model_name_or_path t5-base \
+  --dataset_name msmarco \
+  --embedder_model_name gtr_base \
+  --num_repeat_tokens 16 \
+  --embedder_no_grad True \
+  --num_train_epochs 100 \
+  --max_eval_samples 500 \
+  --eval_steps 20000 \
+  --warmup_steps 10000 \
+  --bf16=1 \
+  --use_wandb=1 \
+  --use_frozen_embeddings_as_input True \
+  --experiment inversion \
+  --lr_scheduler_type constant_with_warmup \
+  --exp_group_name oct-gtr \
+  --learning_rate 0.001 \
+  --output_dir ./saves/gtr-1 \
+  --save_steps 2000
 ```
 
 Note that there are a lot of options to change things about the data and model architecture. If you want to train the small GTR inverter from the paper, this command will work, but you'll have to reduce the maximum sequence length to 32. Once this model trains, add its path to the file `aliases.py` along with the key `gtr_msmarco__msl128__100epoch` and then run the following command to train the corrector:
 
 ```bash
-python run.py --per_device_train_batch_size 32 --per_device_eval_batch_size 32 --max_seq_length 128 --model_name_or_path t5-base --dataset_name msmarco --embedder_model_name gtr_base --num_repeat_tokens 16 --embedder_no_grad True --num_train_epochs 100 --max_eval_samples 500 --eval_steps 20000 --warmup_steps 10000 --bf16=1 --use_wandb=1 --use_frozen_embeddings_as_input True --experiment corrector --lr_scheduler_type constant_with_warmup --exp_group_name oct-gtr --learning_rate 0.001 --output_dir ./saves/gtr-corrector-1 --save_steps 2000 --corrector_model_alias gtr_msmarco__msl128__100epoch
+python run.py \
+  --per_device_train_batch_size 32 \
+  --per_device_eval_batch_size 32 \
+  --max_seq_length 128 \
+  --model_name_or_path t5-base \
+  --dataset_name msmarco \
+  --embedder_model_name gtr_base \
+  --num_repeat_tokens 16 \
+  --embedder_no_grad True \
+  --num_train_epochs 100 \
+  --max_eval_samples 500 \
+  --eval_steps 20000 \
+  --warmup_steps 10000 \
+  --bf16=1 \
+  --use_wandb=1 \
+  --use_frozen_embeddings_as_input True \
+  --experiment corrector \
+  --lr_scheduler_type constant_with_warmup \
+  --exp_group_name oct-gtr \
+  --learning_rate 0.001 \
+  --output_dir ./saves/gtr-corrector-1 \
+  --save_steps 2000 \
+  --corrector_model_alias gtr_msmarco__msl128__100epoch
 ```
 
-If using DDP, run the same command using `torchrun run.py` instead of `python run.py`. You can upload these models to the HuggingFace using our script by running `python scripts/upload_model.py <model_alias> <model_hub_name>`.
+If using DDP, run the same command using `torchrun run.py` instead of `python run.py`. You can upload these models to the Hugging Face Hub using our script by running `python scripts/upload_model.py <model_alias> <model_hub_name>`.
 
 
 ## Pre-trained models
@@ -255,9 +298,13 @@ Our models come in one of two forms: a zero-step 'hypothesizer' model that makes
 
 ### pre-commit
 
-```pip install isort black flake8 mypy --upgrade```
+```bash
+pip install isort black flake8 mypy --upgrade
+```
 
-```pre-commit run --all```
+```bash
+pre-commit run --all
+```
 
 #### Evaluate the models from the papers
 
@@ -293,11 +340,29 @@ trainer.evaluate(
 
 This repository was also used to train language model inverters for our paper *Language Model Inversion*.
 
-This is the dataset of prompts used for training (referred two as "Two Million Instructions" in the manuscript but One Million Instructions on HuggingFace): https://huggingface.co/datasets/wentingzhao/one-million-instructions
+This is the dataset of prompts used for training (referred to as "Two Million Instructions" in the manuscript but One Million Instructions on HuggingFace): https://huggingface.co/datasets/wentingzhao/one-million-instructions
 
 Here is a sample command for training a language model inverter:
 ```bash
-python vec2text/run.py --per_device_train_batch_size 16 --per_device_eval_batch_size 16 --max_seq_length 128 --num_train_epochs 100 --max_eval_samples 1000 --eval_steps 25000 --warmup_steps 100000 --learning_rate 0.0002 --dataset_name one_million_instructions --model_name_or_path t5-base --use_wandb=0 --embedder_model_name gpt2 --experiment inversion_from_logits_emb --bf16=1 --embedder_torch_dtype float16 --lr_scheduler_type constant_with_warmup --use_frozen_embeddings_as_input 1 --mock_embedder 0
+python vec2text/run.py \
+  --per_device_train_batch_size 16 \
+  --per_device_eval_batch_size 16 \
+  --max_seq_length 128 \
+  --num_train_epochs 100 \
+  --max_eval_samples 1000 \
+  --eval_steps 25000 \
+  --warmup_steps 100000 \
+  --learning_rate 0.0002 \
+  --dataset_name one_million_instructions \
+  --model_name_or_path t5-base \
+  --use_wandb=0 \
+  --embedder_model_name gpt2 \
+  --experiment inversion_from_logits_emb \
+  --bf16=1 \
+  --embedder_torch_dtype float16 \
+  --lr_scheduler_type constant_with_warmup \
+  --use_frozen_embeddings_as_input 1 \
+  --mock_embedder 0
 ```
 
 #### Pre-trained models
@@ -326,13 +391,13 @@ trainer.evaluate(
 
 ### Citations
 
-if you benefit from the code or the research, please cite our papers! 
+If you benefit from the code or the research, please cite our papers! 
 
 This repository includes code for two papers:
 
 **Text Embeddings Reveal (Almost) As Much As Text (EMNLP 2023)**
 
-```
+```bibtex
 @misc{morris2023text,
       title={Text Embeddings Reveal (Almost) As Much As Text},
       author={John X. Morris and Volodymyr Kuleshov and Vitaly Shmatikov and Alexander M. Rush},
@@ -345,7 +410,7 @@ This repository includes code for two papers:
 
 **Language Model Inversion (ICLR 2024)**
 
-```
+```bibtex
 @misc{morris2023language,
       title={Language Model Inversion}, 
       author={John X. Morris and Wenting Zhao and Justin T. Chiu and Vitaly Shmatikov and Alexander M. Rush},
