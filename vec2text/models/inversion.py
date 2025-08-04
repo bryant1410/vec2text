@@ -128,6 +128,14 @@ class InversionModel(transformers.PreTrainedModel):
         self.embeddings_from_layer_n = embeddings_from_layer_n
         self.noise_level = vars(config).get("embedder_gaussian_noise_level")
 
+    # Without the following two method overrides, the weight-tying may fail and the model outputs will be wrong.
+
+    def get_input_embeddings(self):
+        return self.encoder_decoder.get_input_embeddings()
+
+    def get_output_embeddings(self):
+        return self.encoder_decoder.get_output_embeddings()
+
     def _freeze_encoder(self):
         freeze_params(self.encoder_decoder.encoder)
 
