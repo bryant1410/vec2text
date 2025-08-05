@@ -115,7 +115,7 @@ class ClipTextEmbedder(CLIPModel):
         position_ids: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
-    ) -> torch.Tensor:
+    ) -> BaseModelOutputWithPooling:
         text_outputs: BaseModelOutputWithPooling = self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -127,7 +127,7 @@ class ClipTextEmbedder(CLIPModel):
         text_embeds = text_outputs.pooler_output
         text_embeds = self.text_projection(text_embeds)
 
-        return text_embeds / _get_vector_norm(text_embeds)
+        return BaseModelOutputWithPooling(pooler_output=text_embeds / _get_vector_norm(text_embeds))
 
 
 def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
