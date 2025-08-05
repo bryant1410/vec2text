@@ -30,7 +30,7 @@ def load_msmarco_corpus() -> datasets.Dataset:
 def load_laion_corpus() -> datasets.Dataset:
     dataset_dict = datasets.load_dataset("laion/relaion400m")
     d = dataset_dict["train"]
-    return d.rename_column("caption", "text")
+    return d.rename_column("caption", "text").take(10_000_000)
 
 
 def create_omi_ex(ex: Dict[str, str]) -> Dict[str, str]:
