@@ -1,10 +1,13 @@
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 import transformers
 from sentence_transformers import SentenceTransformer
+from transformers import CLIPModel
+from transformers.modeling_outputs import BaseModelOutputWithPooling
+from transformers.models.clip.modeling_clip import _get_vector_norm
 
 EMBEDDER_MODEL_NAMES = [
     "bert",
@@ -102,6 +105,29 @@ def stack_pool(
     pooled_outputs = unmasked_outputs.reshape((B, S * D))  # stack along seq length
     assert pooled_outputs.shape == (B, S * D)
     return pooled_outputs
+
+
+class ClipTextEmbedder(CLIPModel):
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+    ) -> torch.Tensor:
+        text_outputs: BaseModelOutputWithPooling = self.text_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+        )
+
+        text_embeds = text_outputs.pooler_output
+        text_embeds = self.text_projection(text_embeds)
+
+        return text_embeds / _get_vector_norm(text_embeds)
 
 
 def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
@@ -250,6 +276,9 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
             "nomic-ai/nomic-embed-text-v1", trust_remote_code=True
         )
         tokenizer = model.tokenizer
+    elif name.startswith("openai/clip-"):
+        model = ClipTextEmbedder.from_pretrained(name, **model_kwargs)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(name)
     else:
         print(f"WARNING: Trying to initialize from unknown embedder {name}")
         model = transformers.AutoModel.from_pretrained(name, **model_kwargs)
