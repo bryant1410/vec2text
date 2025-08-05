@@ -160,9 +160,7 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
     def forward(
         self, input_ids: torch.LongTensor, **kwargs
     ) -> BaseModelOutputWithPooling:
-        text_features = self.open_clip_model.encode_text(
-            input_ids=input_ids, normalize=True
-        )
+        text_features = self.open_clip_model.encode_text(input_ids, normalize=True)
         return BaseModelOutputWithPooling(pooler_output=text_features)
 
 
