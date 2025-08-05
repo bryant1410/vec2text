@@ -1,9 +1,13 @@
+import functools
 import os
 from typing import Any, Dict, Optional
 
+import open_clip
 import torch
 import torch.nn as nn
 import transformers
+from open_clip import CLIPTextCfg, get_model_config
+from open_clip.factory import HF_HUB_PREFIX, _get_hf_config
 from sentence_transformers import SentenceTransformer
 from transformers import CLIPModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
@@ -127,7 +131,71 @@ class ClipTextEmbedder(CLIPModel):
         text_embeds = text_outputs.pooler_output
         text_embeds = self.text_projection(text_embeds)
 
-        return BaseModelOutputWithPooling(pooler_output=text_embeds / _get_vector_norm(text_embeds))
+        return BaseModelOutputWithPooling(
+            pooler_output=text_embeds / _get_vector_norm(text_embeds)
+        )
+
+
+class OpenClipConfig(transformers.PretrainedConfig):
+    def __init__(self, hidden_size: int) -> None:
+        super().__init__()
+        self.hidden_size = hidden_size
+
+
+class OpenClipEmbedder(transformers.PreTrainedModel):
+    config_class = OpenClipConfig
+
+    def __init__(self, open_clip_model: nn.Module):
+        with torch.inference_mode():
+            embedding_dim = open_clip_model.encode_image(
+                torch.zeros((1, 3, *open_clip_model.visual.image_size))
+            ).shape[-1]
+
+        open_clip_model.visual = None
+
+        super().__init__(config=OpenClipConfig(hidden_size=embedding_dim))
+
+        self.open_clip_model = open_clip_model
+
+    def forward(
+        self, input_ids: torch.LongTensor, **kwargs
+    ) -> BaseModelOutputWithPooling:
+        text_features = self.open_clip_model.encode_text(
+            input_ids=input_ids, normalize=True
+        )
+        return BaseModelOutputWithPooling(pooler_output=text_features)
+
+
+# The "!" is a hack to set the padding token ID to 0, which is the default for CLIP.
+CLIP_TOKENIZER = transformers.AutoTokenizer.from_pretrained(
+    "openai/clip-vit-base-patch32", pad_token="!"
+)
+
+
+@functools.lru_cache(maxsize=4)
+def get_open_clip_tokenizer(model_name: str) -> transformers.PreTrainedTokenizerBase:
+    if model_name.startswith(HF_HUB_PREFIX):
+        model_name = model_name.removeprefix(HF_HUB_PREFIX)
+        try:
+            config = _get_hf_config(model_name)["model_cfg"]
+        except FileNotFoundError:
+            config = {"text_cfg": {"hf_tokenizer_name": model_name}}
+    else:
+        config = get_model_config(model_name)
+        assert config is not None, f"No valid model config found for {model_name}."
+
+    text_cfg = CLIPTextCfg(**config["text_cfg"])
+
+    if text_cfg.hf_tokenizer_name:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            text_cfg.hf_tokenizer_name
+        )
+    elif text_cfg.hf_model_name:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(text_cfg.hf_model_name)
+    else:
+        tokenizer = CLIP_TOKENIZER
+
+    return tokenizer
 
 
 def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
@@ -198,11 +266,9 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
         model = transformers.AutoModel.from_pretrained(
             "thenlper/gte-base", **model_kwargs
         )
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            "thenlper/gte-base"
-        )
+        tokenizer = transformers.AutoTokenizer.from_pretrained("thenlper/gte-base")
     elif name == "gte_base_st":
-        model = SentenceTransformer('thenlper/gte-base')
+        model = SentenceTransformer("thenlper/gte-base")
         tokenizer = model.tokenizer
     elif name == "ance_tele":
         model = transformers.AutoModel.from_pretrained(
@@ -279,6 +345,20 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
     elif name.startswith("openai/clip-"):
         model = ClipTextEmbedder.from_pretrained(name, **model_kwargs)
         tokenizer = transformers.AutoTokenizer.from_pretrained(name)
+    elif name.startswith("open_clip/"):
+        suffix = name.removeprefix("open_clip/")
+
+        if suffix.startswith(HF_HUB_PREFIX):
+            model_name = suffix
+            pretrained = None
+        else:
+            model_name, pretrained = suffix.split("/", maxsplit=1)
+
+        open_clip_model = open_clip.create_model_and_transforms(
+            model_name, pretrained=pretrained
+        )[0]
+        model = OpenClipEmbedder(open_clip_model)
+        tokenizer = get_open_clip_tokenizer(model_name)
     else:
         print(f"WARNING: Trying to initialize from unknown embedder {name}")
         model = transformers.AutoModel.from_pretrained(name, **model_kwargs)

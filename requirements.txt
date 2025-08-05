@@ -13,3 +13,6 @@ tenacity
 tokenizers
 tqdm
 transformers
+
+open_clip_torch
+clip_benchmark
