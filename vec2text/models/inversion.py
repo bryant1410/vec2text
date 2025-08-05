@@ -33,14 +33,20 @@ class InversionModel(transformers.PreTrainedModel):
     encoder_decoder: transformers.AutoModelForSeq2SeqLM
     encoder_decoder_lora: bool  # Whether to use LoRA for the encoder-decoder model
     tokenizer: transformers.PreTrainedTokenizer  # encoder_decoder's tokenizer
-    embedding_transform: nn.Module  # Module that transformers embedder output into encoder-decoder input
+    embedding_transform: (
+        nn.Module
+    )  # Module that transformers embedder output into encoder-decoder input
     bottleneck_dim: int  # Bottleneck dimension for embedding_transform
     num_repeat_tokens: int  # Sequence length for repeating embedder embedding for encoder-decoder input
     embedder_dim: int  # Hidden dimension of embedding model
     embedder_no_grad: bool  # Disable gradients for embedding model
     embedder_fake_with_zeros: bool  # Whether to just provide zeros as input for encoder-decoder (unconditional)
-    embedding_transform_strategy: str  # Way to transform bottleneck embedding into input for encoder-decoder
-    use_frozen_embeddings_as_input: bool  # Whether to train/evaluate on frozen embeddings
+    embedding_transform_strategy: (
+        str  # Way to transform bottleneck embedding into input for encoder-decoder
+    )
+    use_frozen_embeddings_as_input: (
+        bool  # Whether to train/evaluate on frozen embeddings
+    )
     embedded_tokens: torch.Tensor  # used for decoding
     embedder_model_api: Optional[str]
 
@@ -60,9 +66,7 @@ class InversionModel(transformers.PreTrainedModel):
         )
 
         embedder, embedder_tokenizer = load_embedder_and_tokenizer(
-            name=config.embedder_model_name,
-            torch_dtype=config.embedder_torch_dtype,
-            max_length=config.max_seq_length,
+            name=config.embedder_model_name, torch_dtype=config.embedder_torch_dtype
         )
 
         tokenizer = load_tokenizer(
@@ -176,9 +180,9 @@ class InversionModel(transformers.PreTrainedModel):
             return outputs.pooler_output
         else:
             if self.embeddings_from_layer_n is not None:
-                assert hasattr(
-                    outputs, "hidden_states"
-                ), "output missing hidden states - did you remember to initialize the model with output_hidden_states=True?"
+                assert hasattr(outputs, "hidden_states"), (
+                    "output missing hidden states - did you remember to initialize the model with output_hidden_states=True?"
+                )
                 hidden_state = outputs.hidden_states[self.embeddings_from_layer_n]
                 embeddings = mean_pool(hidden_state, attention_mask)
             else:
