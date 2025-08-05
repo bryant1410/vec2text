@@ -27,6 +27,13 @@ def load_msmarco_corpus() -> datasets.Dataset:
     return dataset_dict["train"]
 
 
+def load_laion_corpus() -> datasets.Dataset:
+    # has columns ["title", "text"]. only one split ("train")
+    dataset_dict = datasets.load_dataset("laion/relaion400m")
+    d = dataset_dict["train"]
+    return d.rename_column("caption", "text").take(1000)
+
+
 def create_omi_ex(ex: Dict[str, str]) -> Dict[str, str]:
     ex["text"] = ex["user"]
     return ex
@@ -112,6 +119,10 @@ def dataset_from_args(data_args: DataArguments) -> datasets.DatasetDict:
                 "validation": all_luar_datasets["queries"],
             }
         )
+    elif data_args.dataset_name == "laion":
+        raw_datasets = load_laion_corpus()
+        raw_datasets = raw_datasets.train_test_split(test_size=0.01)
+        raw_datasets["validation"] = raw_datasets["test"]
     else:
         raise ValueError(f"unsupported dataset {data_args.dataset_name}")
     return raw_datasets
