@@ -196,7 +196,7 @@ def get_open_clip_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer
     return tokenizer
 
 
-def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
+def load_embedder_and_tokenizer(name: str, torch_dtype: str, max_length: int, **kwargs):
     # TODO make abstract/argparse for it etc.
     # name = "gpt2" #### <--- TEMP. For debugging. Delete!
     model_kwargs = {
@@ -353,7 +353,7 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
             model_name, pretrained = suffix.split("/", maxsplit=1)
 
         open_clip_model = open_clip.create_model_and_transforms(
-            model_name, pretrained=pretrained
+            model_name, pretrained=pretrained, context_length=max_length
         )[0]
         model = OpenClipEmbedder(open_clip_model)
         tokenizer = get_open_clip_tokenizer(model_name)
