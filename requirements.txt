@@ -14,5 +14,6 @@ tokenizers
 tqdm
 transformers
 
-open_clip_torch
+#open_clip_torch
+git+https://github.com/bryant1410/open_clip@patch-1
 clip_benchmark
