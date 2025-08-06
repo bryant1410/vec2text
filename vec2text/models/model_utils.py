@@ -160,6 +160,8 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
 
         self.open_clip_model = open_clip_model
 
+        self.visual = open_clip_model.visual
+
     def forward(
         self, input_ids: torch.LongTensor, **kwargs
     ) -> BaseModelOutputWithPooling:
@@ -347,6 +349,9 @@ def load_embedder_and_tokenizer(
         tokenizer = model.tokenizer
     elif name.startswith("openai/clip-"):
         model = ClipTextEmbedder.from_pretrained(name, **model_kwargs)
+        if not keep_visual:
+            model.vision_model = None
+        model.visual = model.vision_model
         tokenizer = transformers.AutoTokenizer.from_pretrained(name)
     elif name.startswith("open_clip/"):
         name_without_prefix = name.removeprefix("open_clip/")

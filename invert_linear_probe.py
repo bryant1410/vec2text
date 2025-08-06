@@ -14,8 +14,10 @@ from clip_benchmark.metrics.linear_probe import (
 from open_clip.transform import PreprocessCfg, image_transform_v2
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from transformers import CLIPProcessor
 
 import vec2text
+from vec2text.models.model_utils import ClipTextEmbedder, OpenClipEmbedder
 
 
 def get_cpu_count() -> int:
@@ -288,10 +290,15 @@ def main() -> None:
     inversion_model.eval()
 
     model = inversion_model.embedder
-    # tokenizer = inversion_model.embedder_tokenizer
 
-    pp_cfg = PreprocessCfg(**model.visual.preprocess_cfg)
-    transform = image_transform_v2(pp_cfg, is_train=False)
+    if isinstance(model, ClipTextEmbedder):
+        processor = CLIPProcessor.from_pretrained(inversion_model.config.embedder_model_name)
+        transform = lambda image: processor.image_processor(image).data
+    elif isinstance(model, OpenClipEmbedder):
+        pp_cfg = PreprocessCfg(**model.visual.preprocess_cfg)
+        transform = image_transform_v2(pp_cfg, is_train=False)
+    else:
+        raise TypeError(f"Unsupported model: {type(model)}")
 
     dataset = build_dataset(
         dataset_name=DATASET,
