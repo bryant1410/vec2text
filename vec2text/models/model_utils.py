@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import transformers
 from open_clip import CLIPTextCfg, get_model_config
-from open_clip.factory import HF_HUB_PREFIX, _get_hf_config
+from open_clip.factory import HF_HUB_PREFIX, _get_hf_config, parse_model_name
 from sentence_transformers import SentenceTransformer
 from transformers import CLIPModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
@@ -40,7 +40,6 @@ EMBEDDER_MODEL_NAMES = [
     "gpt2-large",
     "gpt2-xl",
 ]
-
 
 FREEZE_STRATEGIES = ["decoder", "encoder_and_decoder", "encoder", "none"]
 EMBEDDING_TRANSFORM_STRATEGIES = ["repeat"]
@@ -84,7 +83,7 @@ def freeze_params(model: nn.Module):
 
 
 def mean_pool(
-    hidden_states: torch.Tensor, attention_mask: torch.Tensor
+        hidden_states: torch.Tensor, attention_mask: torch.Tensor
 ) -> torch.Tensor:
     B, S, D = hidden_states.shape
     unmasked_outputs = hidden_states * attention_mask[..., None]
@@ -102,7 +101,7 @@ def max_pool(hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch
 
 
 def stack_pool(
-    hidden_states: torch.Tensor, attention_mask: torch.Tensor
+        hidden_states: torch.Tensor, attention_mask: torch.Tensor
 ) -> torch.Tensor:
     B, S, D = hidden_states.shape
     unmasked_outputs = hidden_states * attention_mask[..., None]
@@ -113,12 +112,12 @@ def stack_pool(
 
 class ClipTextEmbedder(CLIPModel):
     def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
+            self,
+            input_ids: Optional[torch.LongTensor] = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
     ) -> BaseModelOutputWithPooling:
         text_outputs: BaseModelOutputWithPooling = self.text_model(
             input_ids=input_ids,
@@ -158,7 +157,7 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
         self.open_clip_model = open_clip_model
 
     def forward(
-        self, input_ids: torch.LongTensor, **kwargs
+            self, input_ids: torch.LongTensor, **kwargs
     ) -> BaseModelOutputWithPooling:
         text_features = self.open_clip_model.encode_text(input_ids, normalize=True)
         return BaseModelOutputWithPooling(pooler_output=text_features)
@@ -196,7 +195,7 @@ def get_open_clip_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer
     return tokenizer
 
 
-def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
+def load_embedder_and_tokenizer(name: str, torch_dtype: str, max_length: int | None = None, **kwargs):
     # TODO make abstract/argparse for it etc.
     # name = "gpt2" #### <--- TEMP. For debugging. Delete!
     model_kwargs = {
@@ -352,9 +351,15 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
         else:
             model_name, pretrained = suffix.split("/", maxsplit=1)
 
-        open_clip_model = open_clip.create_model_and_transforms(
-            model_name, pretrained=pretrained
-        )[0]
+        if max_length:
+            # In this case, we get the model's text config and update the context length.
+            model_cfg = get_model_config(parse_model_name(model_name)[1].replace("/", "-"))
+            model_cfg.pop("custom_text", None)
+            model_kwargs = {"text_cfg": {**model_cfg["text_cfg"], "context_length": max_length}}
+        else:
+            model_kwargs = {}
+
+        open_clip_model = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, **model_kwargs)[0]
         model = OpenClipEmbedder(open_clip_model)
         tokenizer = get_open_clip_tokenizer(model_name)
     else:
@@ -367,7 +372,7 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, **kwargs):
 
 
 def load_encoder_decoder(
-    model_name: str, lora: bool = False
+        model_name: str, lora: bool = False
 ) -> transformers.AutoModelForSeq2SeqLM:
     model_kwargs: Dict[str, Any] = {
         "low_cpu_mem_usage": True,
