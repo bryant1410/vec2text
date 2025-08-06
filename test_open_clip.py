@@ -6,7 +6,7 @@ import vec2text
 
 def main() -> None:
     last_checkpoint = transformers.trainer_utils.get_last_checkpoint(
-        "saves/open_clip_vit_b_32_quickgelu_openai_1"
+        "saves/openclip_vit_b_32_quickgelu_openai_1"
     )
     print(last_checkpoint)
 
