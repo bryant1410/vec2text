@@ -368,10 +368,14 @@ def main() -> None:
 
     corrector = vec2text.load_corrector(inversion_model, corrector_model)
 
+    print("Classes:", dataset.classes)
+    print()
+
     print(
         "Weight texts:",
         vec2text.invert_embeddings(linear_model.weight, corrector=corrector),
     )
+    print()
     print(
         "Transposed weight texts:",
         vec2text.invert_embeddings(linear_model.weight.T, corrector=corrector),
