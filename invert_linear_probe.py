@@ -268,7 +268,7 @@ def evaluate(
         train_loader = feature_train_loader
 
     return train(
-        train_loader, input_shape, output_shape, best_wd, lr, epochs, amp, device, seed
+        train_loader, input_shape, output_shape, best_wd, lr, epochs, amp, str(device), seed
     )
 
 
