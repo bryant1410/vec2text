@@ -268,8 +268,16 @@ def evaluate(
         train_loader = feature_train_loader
 
     return train(
-        train_loader, input_shape, output_shape, best_wd, lr, epochs, amp, str(device), seed
-    )
+        train_loader,
+        input_shape,
+        output_shape,
+        best_wd,
+        lr,
+        epochs,
+        amp,
+        str(device),
+        seed,
+    ).module
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -374,11 +382,6 @@ def main() -> None:
     print(
         "Weight texts:",
         vec2text.invert_embeddings(linear_model.weight, corrector=corrector),
-    )
-    print()
-    print(
-        "Transposed weight texts:",
-        vec2text.invert_embeddings(linear_model.weight.T, corrector=corrector),
     )
     print()
     print("Bias:", linear_model.bias)
