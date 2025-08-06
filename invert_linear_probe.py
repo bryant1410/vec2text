@@ -376,15 +376,18 @@ def main() -> None:
 
     corrector = vec2text.load_corrector(inversion_model, corrector_model)
 
-    print("Classes:", dataset.classes)
+    print("Classes:")
+    for class_ in dataset.classes:
+        print(f"  {class_}")
     print()
 
-    print(
-        "Weight texts:",
-        vec2text.invert_embeddings(linear_model.weight, corrector=corrector),
-    )
+    inverted_embeddings = vec2text.invert_embeddings(linear_model.weight, corrector=corrector)
+    print("Weight texts:")
+    for inverted_embedding in inverted_embeddings:
+        print(f"  {inverted_embedding}")
+
     print()
-    print("Bias:", linear_model.bias)
+    print("Biases:", linear_model.bias)
 
 
 if __name__ == "__main__":
