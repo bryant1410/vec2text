@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import logging
 import os
 
 import numpy as np
@@ -376,9 +377,11 @@ def main() -> None:
 
     corrector = vec2text.load_corrector(inversion_model, corrector_model)
 
+    logging.info("Inverting weights…")
     inverted_embeddings = vec2text.invert_embeddings(
         linear_model.weight, corrector=corrector
     )
+    logging.info("✅ Weights inverted.")
 
     for i, (class_, inverted_embedding, bias) in enumerate(
         zip(dataset.classes, inverted_embeddings, linear_model.bias, strict=True)
