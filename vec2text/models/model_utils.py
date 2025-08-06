@@ -134,6 +134,17 @@ class ClipTextEmbedder(CLIPModel):
             pooler_output=text_embeds / _get_vector_norm(text_embeds)
         )
 
+    def encode_image(self, images: torch.Tensor, normalize: bool = False) -> torch.Tensor:
+        vision_outputs: BaseModelOutputWithPooling = self.vision_model(images)
+
+        image_embeds = vision_outputs.pooler_output
+        image_embeds = self.visual_projection(image_embeds)
+
+        if normalize:
+            image_embeds = image_embeds / _get_vector_norm(image_embeds)
+
+        return image_embeds
+
 
 class OpenClipConfig(transformers.PretrainedConfig):
     def __init__(self, hidden_size: int) -> None:

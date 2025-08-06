@@ -32,24 +32,25 @@ def get_cpus_per_gpus() -> int:
 
 # Like `linear_probe.evaluate` but it returns the model instead.
 def evaluate(
-    model,
-    train_dataloader,
-    dataloader,
-    fewshot_k,
-    batch_size,
-    num_workers,
-    lr,
-    epochs,
-    model_id,
-    seed,
-    feature_root,
-    device,
-    val_dataloader=None,
-    normalize=True,
-    amp=True,
-    verbose=False,
+    model: torch.nn.Module,
+    train_dataloader: DataLoader,
+    dataloader: DataLoader,
+    fewshot_k: int,
+    batch_size: int,
+    num_workers: int,
+    lr: float,
+    epochs: int,
+    model_id: str,
+    seed: int,
+    feature_root: str,
+    device: torch.device | str,
+    val_dataloader: DataLoader | None = None,
+    normalize: bool = True,
+    amp: bool = True,
+    verbose: bool = False,
 ) -> torch.nn.Linear:
-    assert device == "cuda"  # need to use cuda for this else too slow
+    device = torch.device(device)
+
     # first we need to featurize the dataset, and store the result in feature_root
     if not os.path.exists(feature_root):
         os.mkdir(feature_root)
@@ -57,7 +58,7 @@ def evaluate(
     if not os.path.exists(feature_dir):
         os.mkdir(feature_dir)
 
-    featurizer = Featurizer(model, normalize).cuda()
+    featurizer = Featurizer(model, normalize).to(device)
     if not os.path.exists(os.path.join(feature_dir, "targets_train.pt")):
         # now we have to cache the features
         devices = [x for x in range(torch.cuda.device_count())]
@@ -77,7 +78,7 @@ def evaluate(
                 for images, target in tqdm(loader):
                     images = images.to(device)
 
-                    with torch.autocast(device, enabled=amp):
+                    with torch.autocast(device.type, enabled=amp):
                         feature = featurizer(images)
 
                     features.append(feature.cpu())
@@ -275,7 +276,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_WORKERS = get_cpus_per_gpus()
 BATCH_SIZE = 64
 SEED = 0
-DATASET = "imagenet1k"
+DATASET = "cifar10"
 
 
 def main() -> None:
@@ -292,8 +293,14 @@ def main() -> None:
     model = inversion_model.embedder
 
     if isinstance(model, ClipTextEmbedder):
-        processor = CLIPProcessor.from_pretrained(inversion_model.config.embedder_model_name)
-        transform = lambda image: processor.image_processor(image).data
+        processor = CLIPProcessor.from_pretrained(
+            inversion_model.config.embedder_model_name
+        )
+        transform = (
+            lambda image: processor.image_processor(image, return_tensors="pt")
+            .data["pixel_values"]
+            .squeeze(0)
+        )
     elif isinstance(model, OpenClipEmbedder):
         pp_cfg = PreprocessCfg(**model.visual.preprocess_cfg)
         transform = image_transform_v2(pp_cfg, is_train=False)
@@ -361,8 +368,14 @@ def main() -> None:
 
     corrector = vec2text.load_corrector(inversion_model, corrector_model)
 
-    print("Weight texts:", vec2text.invert_embeddings(linear_model.weight, corrector=corrector))
-    print("Transposed weight texts:", vec2text.invert_embeddings(linear_model.weight.T, corrector=corrector))
+    print(
+        "Weight texts:",
+        vec2text.invert_embeddings(linear_model.weight, corrector=corrector),
+    )
+    print(
+        "Transposed weight texts:",
+        vec2text.invert_embeddings(linear_model.weight.T, corrector=corrector),
+    )
     print()
     print("Bias:", linear_model.bias)
 
