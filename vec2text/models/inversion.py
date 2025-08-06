@@ -50,7 +50,7 @@ class InversionModel(transformers.PreTrainedModel):
     embedded_tokens: torch.Tensor  # used for decoding
     embedder_model_api: Optional[str]
 
-    def __init__(self, config: InversionConfig):
+    def __init__(self, config: InversionConfig, keep_visual: bool = False):
         super().__init__(config=config)
 
         embedder_model_api = config.embedder_model_api
@@ -66,7 +66,10 @@ class InversionModel(transformers.PreTrainedModel):
         )
 
         embedder, embedder_tokenizer = load_embedder_and_tokenizer(
-            name=config.embedder_model_name, torch_dtype=config.embedder_torch_dtype, max_length=config.max_seq_length
+            name=config.embedder_model_name,
+            torch_dtype=config.embedder_torch_dtype,
+            max_length=config.max_seq_length,
+            keep_visual=keep_visual,
         )
 
         tokenizer = load_tokenizer(

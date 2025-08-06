@@ -144,7 +144,7 @@ class OpenClipConfig(transformers.PretrainedConfig):
 class OpenClipEmbedder(transformers.PreTrainedModel):
     config_class = OpenClipConfig
 
-    def __init__(self, open_clip_model: nn.Module):
+    def __init__(self, open_clip_model: nn.Module, keep_visual: bool = False) -> None:
         embedding_dim = getattr(
             open_clip_model.visual,
             "output_dim",
@@ -153,7 +153,8 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
             ),
         )
 
-        open_clip_model.visual = None
+        if not keep_visual:
+            open_clip_model.visual = None
 
         super().__init__(config=OpenClipConfig(hidden_size=embedding_dim))
 
@@ -199,7 +200,7 @@ def get_open_clip_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer
 
 
 def load_embedder_and_tokenizer(
-    name: str, torch_dtype: str, max_length: int | None = None, **kwargs
+    name: str, torch_dtype: str, max_length: int | None = None, keep_visual: bool = False, **kwargs
 ):
     # TODO make abstract/argparse for it etc.
     # name = "gpt2" #### <--- TEMP. For debugging. Delete!
@@ -374,7 +375,7 @@ def load_embedder_and_tokenizer(
         open_clip_model = open_clip.create_model_and_transforms(
             model_name, pretrained=pretrained, **model_kwargs
         )[0]
-        model = OpenClipEmbedder(open_clip_model)
+        model = OpenClipEmbedder(open_clip_model, keep_visual=keep_visual)
         tokenizer = get_open_clip_tokenizer(model_name)
     else:
         print(f"WARNING: Trying to initialize from unknown embedder {name}")

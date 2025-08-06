@@ -3,8 +3,6 @@ import torch
 
 import vec2text
 
-MAX_LENGTH = 32
-
 CHECKPOINT_PATH = "saves/gtr-4/checkpoint-1709700"
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,7 +19,7 @@ def main() -> None:
 
     inputs = inversion_model.embedder_tokenizer(
         ["A cat sat on the mat.", "A dog sat on the mat.", "This is not correct."],
-        return_tensors="pt", max_length=MAX_LENGTH, truncation=True, padding="max_length",
+        return_tensors="pt", max_length=inversion_model.config.max_seq_length, truncation=True, padding="max_length",
     )
     inputs = inputs.to(DEVICE)
     with torch.no_grad():
@@ -30,7 +28,7 @@ def main() -> None:
         )
 
     gen_kwargs = {"early_stopping": False, "num_beams": 1, "do_sample": False, "no_repeat_ngram_size": 1,
-                  "min_length": 1, "max_length": MAX_LENGTH}
+                  "min_length": 1, "max_length": inversion_model.config.max_seq_length}
 
     regenerated = inversion_model.generate(inputs={"frozen_embeddings": frozen_embeddings},
                                            generation_kwargs=gen_kwargs)
