@@ -83,7 +83,7 @@ def freeze_params(model: nn.Module):
 
 
 def mean_pool(
-        hidden_states: torch.Tensor, attention_mask: torch.Tensor
+    hidden_states: torch.Tensor, attention_mask: torch.Tensor
 ) -> torch.Tensor:
     B, S, D = hidden_states.shape
     unmasked_outputs = hidden_states * attention_mask[..., None]
@@ -101,7 +101,7 @@ def max_pool(hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch
 
 
 def stack_pool(
-        hidden_states: torch.Tensor, attention_mask: torch.Tensor
+    hidden_states: torch.Tensor, attention_mask: torch.Tensor
 ) -> torch.Tensor:
     B, S, D = hidden_states.shape
     unmasked_outputs = hidden_states * attention_mask[..., None]
@@ -112,12 +112,12 @@ def stack_pool(
 
 class ClipTextEmbedder(CLIPModel):
     def forward(
-            self,
-            input_ids: Optional[torch.LongTensor] = None,
-            attention_mask: Optional[torch.Tensor] = None,
-            position_ids: Optional[torch.LongTensor] = None,
-            output_attentions: Optional[bool] = None,
-            output_hidden_states: Optional[bool] = None,
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
     ) -> BaseModelOutputWithPooling:
         text_outputs: BaseModelOutputWithPooling = self.text_model(
             input_ids=input_ids,
@@ -145,10 +145,13 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
     config_class = OpenClipConfig
 
     def __init__(self, open_clip_model: nn.Module):
-        with torch.inference_mode():
-            embedding_dim = open_clip_model.encode_image(
-                torch.zeros((1, 3, *open_clip_model.visual.image_size))
-            ).shape[-1]
+        embedding_dim = getattr(
+            open_clip_model.visual,
+            "output_dim",
+            getattr(
+                getattr(open_clip_model.visual, "head", None), "out_features", None
+            ),
+        )
 
         open_clip_model.visual = None
 
@@ -157,7 +160,7 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
         self.open_clip_model = open_clip_model
 
     def forward(
-            self, input_ids: torch.LongTensor, **kwargs
+        self, input_ids: torch.LongTensor, **kwargs
     ) -> BaseModelOutputWithPooling:
         text_features = self.open_clip_model.encode_text(input_ids, normalize=True)
         return BaseModelOutputWithPooling(pooler_output=text_features)
@@ -195,7 +198,9 @@ def get_open_clip_tokenizer(model_name: str) -> transformers.PreTrainedTokenizer
     return tokenizer
 
 
-def load_embedder_and_tokenizer(name: str, torch_dtype: str, max_length: int | None = None, **kwargs):
+def load_embedder_and_tokenizer(
+    name: str, torch_dtype: str, max_length: int | None = None, **kwargs
+):
     # TODO make abstract/argparse for it etc.
     # name = "gpt2" #### <--- TEMP. For debugging. Delete!
     model_kwargs = {
@@ -353,13 +358,19 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, max_length: int | N
 
         if max_length:
             # In this case, we get the model's text config and update the context length.
-            model_cfg = get_model_config(parse_model_name(model_name)[1].replace("/", "-"))
+            model_cfg = get_model_config(
+                parse_model_name(model_name)[1].replace("/", "-")
+            )
             model_cfg.pop("custom_text", None)
-            model_kwargs = {"text_cfg": {**model_cfg["text_cfg"], "context_length": max_length}}
+            model_kwargs = {
+                "text_cfg": {**model_cfg["text_cfg"], "context_length": max_length}
+            }
         else:
             model_kwargs = {}
 
-        open_clip_model = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, **model_kwargs)[0]
+        open_clip_model = open_clip.create_model_and_transforms(
+            model_name, pretrained=pretrained, **model_kwargs
+        )[0]
         model = OpenClipEmbedder(open_clip_model)
         tokenizer = get_open_clip_tokenizer(model_name)
     else:
@@ -372,7 +383,7 @@ def load_embedder_and_tokenizer(name: str, torch_dtype: str, max_length: int | N
 
 
 def load_encoder_decoder(
-        model_name: str, lora: bool = False
+    model_name: str, lora: bool = False
 ) -> transformers.AutoModelForSeq2SeqLM:
     model_kwargs: Dict[str, Any] = {
         "low_cpu_mem_usage": True,
