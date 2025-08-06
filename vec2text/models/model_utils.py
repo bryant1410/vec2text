@@ -348,19 +348,22 @@ def load_embedder_and_tokenizer(
         model = ClipTextEmbedder.from_pretrained(name, **model_kwargs)
         tokenizer = transformers.AutoTokenizer.from_pretrained(name)
     elif name.startswith("open_clip/"):
-        suffix = name.removeprefix("open_clip/")
+        name_without_prefix = name.removeprefix("open_clip/")
+        schema, identifier = parse_model_name(name_without_prefix)
 
-        if suffix.startswith(HF_HUB_PREFIX):
-            model_name = suffix
+        if schema == "hf-hub":
+            model_name = name_without_prefix
             pretrained = None
         else:
-            model_name, pretrained = suffix.split("/", maxsplit=1)
+            model_name, pretrained = identifier.split("/", maxsplit=1)
 
         if max_length:
             # In this case, we get the model's text config and update the context length.
-            model_cfg = get_model_config(
-                parse_model_name(model_name)[1].replace("/", "-")
-            )
+            if schema == "hf-hub":
+                model_cfg = _get_hf_config(identifier)["model_cfg"]
+            else:
+                model_cfg = get_model_config(identifier.replace("/", "-"))
+
             model_cfg.pop("custom_text", None)
             model_kwargs = {
                 "text_cfg": {**model_cfg["text_cfg"], "context_length": max_length}
