@@ -285,6 +285,7 @@ def main() -> None:
     inversion_model = vec2text.models.InversionModel.from_pretrained(
         last_checkpoint, keep_visual=True
     )
+    inversion_model.eval()
 
     model = inversion_model.embedder
     # tokenizer = inversion_model.embedder_tokenizer
