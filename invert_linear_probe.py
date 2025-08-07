@@ -330,6 +330,13 @@ def main() -> None:
     inversion_model.load_embedder_visual()  # Necessary because it may not be in the saved checkpoint.
     inversion_model.eval()
 
+    # This is incorrect, but it doesn't matter for the test:
+    corrector_model = vec2text.models.CorrectorEncoderModel.from_pretrained(
+        last_checkpoint
+    )
+
+    corrector = vec2text.load_corrector(inversion_model, corrector_model)
+
     model = inversion_model.embedder
 
     if isinstance(model, ClipTextEmbedder):
@@ -393,7 +400,7 @@ def main() -> None:
         num_workers=args.num_workers,
         lr=0.1,
         epochs=10,
-        model_id=inversion_model.config.embedder_model_name.replace("/", "_"),
+        model_id=(inversion_model.config.embedder_model_name + "_" + last_checkpoint).replace("/", "_"),
         seed=args.seed,
         feature_root="features",
         device=args.device,
@@ -401,13 +408,6 @@ def main() -> None:
         amp=True,
         verbose=True,
     )
-
-    # This is incorrect, but it doesn't matter for the test:
-    corrector_model = vec2text.models.CorrectorEncoderModel.from_pretrained(
-        last_checkpoint
-    )
-
-    corrector = vec2text.load_corrector(inversion_model, corrector_model)
 
     logging.info("Inverting weights…")
     inverted_embeddings = vec2text.invert_embeddings(
