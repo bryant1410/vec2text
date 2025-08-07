@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+import argparse
 import logging
 import os
+from typing import Any
 
 import numpy as np
 import torch
@@ -10,9 +12,11 @@ from clip_benchmark.metrics.linear_probe import (
     FeatureDataset,
     Featurizer,
     find_peak,
+    infer,
     train,
 )
 from open_clip.transform import PreprocessCfg, image_transform_v2
+from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import CLIPProcessor
@@ -49,7 +53,7 @@ def evaluate(
     normalize: bool = True,
     amp: bool = True,
     verbose: bool = False,
-) -> torch.nn.Linear:
+) -> tuple[torch.nn.Linear, dict[str, Any]]:
     device = torch.device(device)
 
     # first we need to featurize the dataset, and store the result in feature_root
@@ -76,7 +80,7 @@ def evaluate(
             num_batches_tracked = 0
             num_cached = 0
             with torch.no_grad():
-                for images, target in tqdm(loader):
+                for images, target in tqdm(loader, desc="Precomputing features"):
                     images = images.to(device)
 
                     with torch.autocast(device.type, enabled=amp):
@@ -168,11 +172,12 @@ def evaluate(
 
     for c in counts:
         if fewshot_k > 0 and counts[c] != fewshot_k:
-            print("insufficient data for this eval")
-            return
+            raise TypeError("insufficient data for this eval")
 
     train_features = features[idxs]
     train_labels = targets[idxs]
+    feature_train_val_loader = None
+    feature_val_loader = None
     if val_dataloader is not None:
         features_val = torch.load(os.path.join(feature_dir, "features_val.pt"))
         targets_val = torch.load(os.path.join(feature_dir, "targets_val.pt"))
@@ -268,7 +273,7 @@ def evaluate(
         best_wd = 0
         train_loader = feature_train_loader
 
-    return train(
+    linear_model = train(
         train_loader,
         input_shape,
         output_shape,
@@ -280,23 +285,48 @@ def evaluate(
         seed,
     ).module
 
+    logits, target = infer(linear_model, feature_test_loader, amp, str(device))
+    pred = logits.argmax(axis=1)
+    classification_results = classification_report(target, pred, output_dict=True)
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-NUM_WORKERS = get_cpus_per_gpus()
-BATCH_SIZE = 64
-SEED = 0
-DATASET = "cifar10"
+    return linear_model, classification_results
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--experiment-dir", default="saves/openclip_vit_b_32_quickgelu_openai_1"
+    )
+    parser.add_argument("--dataset", default="cifar10")
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--num-workers", type=int, default=get_cpus_per_gpus())
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    args = parser.parse_args()
+
+    args.device = torch.device(args.device)
+
+    return args
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+
+    args = parse_args()
+
     last_checkpoint = transformers.trainer_utils.get_last_checkpoint(
-        "saves/openai-clip-vit-b-32-1"
+        args.experiment_dir
     )
-    print("Last checkpoint:", last_checkpoint)
+    logging.info(f"Latest checkpoint: {last_checkpoint}")
 
     inversion_model = vec2text.models.InversionModel.from_pretrained(
         last_checkpoint, keep_visual=True
     )
+    inversion_model.load_embedder_visual()  # Necessary because it may not be in the saved checkpoint.
     inversion_model.eval()
 
     model = inversion_model.embedder
@@ -311,32 +341,32 @@ def main() -> None:
             .squeeze(0)
         )
     elif isinstance(model, OpenClipEmbedder):
-        pp_cfg = PreprocessCfg(**model.visual.preprocess_cfg)
+        pp_cfg = PreprocessCfg(**model.get_visual().preprocess_cfg)
         transform = image_transform_v2(pp_cfg, is_train=False)
     else:
         raise TypeError(f"Unsupported model: {type(model)}")
 
     dataset = build_dataset(
-        dataset_name=DATASET,
+        dataset_name=args.dataset,
         transform=transform,
         download=True,
         task="linear_probe",
     )
 
-    collate_fn = get_dataset_collate_fn(DATASET)
+    collate_fn = get_dataset_collate_fn(args.dataset)
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=NUM_WORKERS,
+        num_workers=args.num_workers,
         collate_fn=collate_fn,
-        pin_memory=DEVICE.type != "cpu",
-        persistent_workers=NUM_WORKERS > 0,
+        pin_memory=args.device.type != "cpu",
+        persistent_workers=args.num_workers > 0,
     )
 
     train_dataset = build_dataset(
-        dataset_name=DATASET,
+        dataset_name=args.dataset,
         transform=transform,
         split="train",
         download=True,
@@ -344,27 +374,27 @@ def main() -> None:
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=BATCH_SIZE,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=NUM_WORKERS,
+        num_workers=args.num_workers,
         collate_fn=collate_fn,
-        pin_memory=DEVICE.type != "cpu",
-        persistent_workers=NUM_WORKERS > 0,
+        pin_memory=args.device.type != "cpu",
+        persistent_workers=args.num_workers > 0,
     )
 
-    linear_model = evaluate(
+    linear_model, classification_results = evaluate(
         model,
         train_dataloader,
         dataloader,
         fewshot_k=-1,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
         lr=0.1,
         epochs=10,
         model_id=inversion_model.config.embedder_model_name.replace("/", "_"),
-        seed=SEED,
+        seed=args.seed,
         feature_root="features",
-        device=DEVICE,
+        device=args.device,
         normalize=True,
         amp=True,
         verbose=True,
@@ -386,7 +416,13 @@ def main() -> None:
     for i, (class_, inverted_embedding, bias) in enumerate(
         zip(dataset.classes, inverted_embeddings, linear_model.bias, strict=True)
     ):
-        print(f'{i} - Class: {class_} - Bias: {bias} - Weight to text: "{inverted_embedding}"')
+        class_results = classification_results[str(i)]
+        precision = round(class_results["precision"] * 100)
+        recall = round(class_results["recall"] * 100)
+        print(
+            f"{i} - Class: {class_} - P: {precision:3d}% - R: {recall:3d}% - Bias: {bias}"
+            f' - Weight to text: "{inverted_embedding}"'
+        )
 
 
 if __name__ == "__main__":

@@ -111,6 +111,12 @@ def stack_pool(
 
 
 class ClipTextEmbedder(CLIPModel):
+    def get_visual(self) -> nn.Module:
+        return self.visual
+
+    def set_visual(self, visual: nn.Module) -> None:
+        self.visual = visual
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -155,7 +161,7 @@ class OpenClipConfig(transformers.PretrainedConfig):
 class OpenClipEmbedder(transformers.PreTrainedModel):
     config_class = OpenClipConfig
 
-    def __init__(self, open_clip_model: nn.Module, keep_visual: bool = False) -> None:
+    def __init__(self, open_clip_model: nn.Module) -> None:
         embedding_dim = getattr(
             open_clip_model.visual,
             "output_dim",
@@ -164,14 +170,15 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
             ),
         )
 
-        if not keep_visual:
-            open_clip_model.visual = None
-
         super().__init__(config=OpenClipConfig(hidden_size=embedding_dim))
 
         self.open_clip_model = open_clip_model
 
-        self.visual = open_clip_model.visual
+    def get_visual(self) -> nn.Module:
+        return self.open_clip_model.visual
+
+    def set_visual(self, visual: nn.Module) -> None:
+        self.open_clip_model.visual = visual
 
     def forward(
         self, input_ids: torch.LongTensor, **kwargs
@@ -364,8 +371,7 @@ def load_embedder_and_tokenizer(
     elif name.startswith("openai/clip-"):
         model = ClipTextEmbedder.from_pretrained(name, **model_kwargs)
         if not keep_visual:
-            model.vision_model = None
-        model.visual = model.vision_model
+            model.set_visual(None)
         tokenizer = transformers.AutoTokenizer.from_pretrained(name)
     elif name.startswith("open_clip/"):
         name_without_prefix = name.removeprefix("open_clip/")
@@ -395,7 +401,9 @@ def load_embedder_and_tokenizer(
         open_clip_model = open_clip.create_model_and_transforms(
             model_name, pretrained=pretrained, **model_kwargs
         )[0]
-        model = OpenClipEmbedder(open_clip_model, keep_visual=keep_visual)
+        model = OpenClipEmbedder(open_clip_model)
+        if not keep_visual:
+            model.set_visual(None)
         tokenizer = get_open_clip_tokenizer(model_name)
     else:
         print(f"WARNING: Trying to initialize from unknown embedder {name}")
