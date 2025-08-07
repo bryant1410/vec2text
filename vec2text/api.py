@@ -113,7 +113,7 @@ def invert_embeddings(
         )
 
     output_strings = corrector.tokenizer.batch_decode(
-        regenerated, skip_special_tokens=True
+        regenerated, skip_special_tokens=True, clean_up_tokenization_spaces=True
     )
     return output_strings
 
