@@ -1,14 +1,22 @@
 #!/usr/bin/env python
+import argparse
+
 import transformers
 
 import vec2text
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--experiment-dir", default="saves/openclip_vit_b_32_quickgelu_openai_1")
+    return parser.parse_args()
+
+
 def main() -> None:
-    last_checkpoint = transformers.trainer_utils.get_last_checkpoint(
-        "saves/openclip_vit_b_32_quickgelu_openai_1"
-    )
-    print(last_checkpoint)
+    args = parse_args()
+
+    last_checkpoint = transformers.trainer_utils.get_last_checkpoint(args.experiment_dir)
+    print("Latest checkpoint:", last_checkpoint)
 
     inversion_model = vec2text.models.InversionModel.from_pretrained(last_checkpoint)
 
