@@ -179,6 +179,9 @@ class OpenClipEmbedder(transformers.PreTrainedModel):
         text_features = self.open_clip_model.encode_text(input_ids, normalize=True)
         return BaseModelOutputWithPooling(pooler_output=text_features)
 
+    def encode_image(self, images: torch.Tensor, normalize: bool = False) -> torch.Tensor:
+        return self.open_clip_model.encode_image(images, normalize=normalize)
+
 
 # The "!" is a hack to set the padding token ID to 0, which is the default for CLIP.
 CLIP_TOKENIZER = transformers.AutoTokenizer.from_pretrained(
