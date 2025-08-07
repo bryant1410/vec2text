@@ -112,10 +112,10 @@ def stack_pool(
 
 class ClipTextEmbedder(CLIPModel):
     def get_visual(self) -> nn.Module:
-        return self.visual
+        return self.vision_model
 
     def set_visual(self, visual: nn.Module) -> None:
-        self.visual = visual
+        self.vision_model = visual
 
     def forward(
         self,
