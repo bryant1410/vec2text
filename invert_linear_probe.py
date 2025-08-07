@@ -354,11 +354,18 @@ def main() -> None:
     else:
         raise TypeError(f"Unsupported model: {type(model)}")
 
+    root_dir = (
+        f"https://huggingface.co/datasets/clip-benchmark/"
+        f"wds_{args.dataset.removeprefix('wds/').replace('/', '-')}/tree/main"
+        if args.dataset.startswith("wds/")
+        else "root"
+    )
     dataset = build_dataset(
         dataset_name=args.dataset,
+        task="linear_probe",
+        root=root_dir,
         transform=transform,
         download=True,
-        task="linear_probe",
     )
 
     collate_fn = get_dataset_collate_fn(args.dataset)
@@ -375,6 +382,7 @@ def main() -> None:
 
     train_dataset = build_dataset(
         dataset_name=args.dataset,
+        root=root_dir,
         transform=transform,
         split="train",
         download=True,
@@ -400,7 +408,9 @@ def main() -> None:
         num_workers=args.num_workers,
         lr=1e-3,
         epochs=10,
-        model_id=(inversion_model.config.embedder_model_name + "_" + last_checkpoint).replace("/", "_"),
+        model_id=(
+            inversion_model.config.embedder_model_name + "_" + last_checkpoint
+        ).replace("/", "_"),
         seed=args.seed,
         feature_root="features",
         device=args.device,
