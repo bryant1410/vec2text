@@ -58,11 +58,8 @@ def evaluate(
     device = torch.device(device)
 
     # first we need to featurize the dataset, and store the result in feature_root
-    if not os.path.exists(feature_root):
-        os.mkdir(feature_root)
     feature_dir = os.path.join(feature_root, model_id, dataset)
-    if not os.path.exists(feature_dir):
-        os.mkdir(feature_dir)
+    os.makedirs(feature_dir, exist_ok=True)
 
     featurizer = Featurizer(model, normalize).to(device)
     path = os.path.join(feature_dir, "targets_train.pt")
