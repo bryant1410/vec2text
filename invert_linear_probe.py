@@ -38,6 +38,7 @@ def get_cpus_per_gpus() -> int:
 # Like `linear_probe.evaluate` but it returns the model instead.
 def evaluate(
     model: torch.nn.Module,
+    dataset: str,
     train_dataloader: DataLoader,
     dataloader: DataLoader,
     fewshot_k: int,
@@ -59,12 +60,15 @@ def evaluate(
     # first we need to featurize the dataset, and store the result in feature_root
     if not os.path.exists(feature_root):
         os.mkdir(feature_root)
-    feature_dir = os.path.join(feature_root, model_id)
+    feature_dir = os.path.join(feature_root, model_id, dataset)
     if not os.path.exists(feature_dir):
         os.mkdir(feature_dir)
 
     featurizer = Featurizer(model, normalize).to(device)
-    if not os.path.exists(os.path.join(feature_dir, "targets_train.pt")):
+    path = os.path.join(feature_dir, "targets_train.pt")
+    if os.path.exists(path):
+        logging.info(f"Using the existing pre-computed features from {path}.")
+    else:
         # now we have to cache the features
         devices = [x for x in range(torch.cuda.device_count())]
         featurizer = torch.nn.DataParallel(featurizer, device_ids=devices)
@@ -151,7 +155,7 @@ def evaluate(
             torch.save(targets, os.path.join(feature_dir, f"targets{save_str}.pt"))
 
     features = torch.load(os.path.join(feature_dir, "features_train.pt"))
-    targets = torch.load(os.path.join(feature_dir, "targets_train.pt"))
+    targets = torch.load(path)
 
     # second, make a dataloader with k features per class. if k = -1, use all features.
     length = len(features)
@@ -383,9 +387,10 @@ def main() -> None:
     )
 
     linear_model, classification_results = evaluate(
-        model,
-        train_dataloader,
-        dataloader,
+        model=model,
+        dataset=args.dataset,
+        train_dataloader=train_dataloader,
+        dataloader=dataloader,
         fewshot_k=-1,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
