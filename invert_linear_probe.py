@@ -398,7 +398,7 @@ def main() -> None:
         fewshot_k=-1,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        lr=0.1,
+        lr=1e-3,
         epochs=10,
         model_id=(inversion_model.config.embedder_model_name + "_" + last_checkpoint).replace("/", "_"),
         seed=args.seed,
