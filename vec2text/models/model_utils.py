@@ -373,13 +373,14 @@ def load_embedder_and_tokenizer(
             pretrained = None
         else:
             model_name, pretrained = identifier.split("/", maxsplit=1)
+            model_name = model_name.replace("/", "-")
 
         if max_length:
             # In this case, we get the model's text config and update the context length.
             if schema == "hf-hub":
                 model_cfg = _get_hf_config(identifier)["model_cfg"]
             else:
-                model_cfg = get_model_config(identifier.replace("/", "-"))
+                model_cfg = get_model_config(model_name)
 
             model_cfg.pop("custom_text", None)
             model_kwargs = {
