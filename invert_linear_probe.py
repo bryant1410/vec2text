@@ -20,6 +20,8 @@ from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import CLIPProcessor
+from webdataset.compat import WebDataset
+from webdataset.shardlists import SimpleShardList
 
 import vec2text
 from vec2text.models.model_utils import ClipTextEmbedder, OpenClipEmbedder
@@ -370,14 +372,20 @@ def main() -> None:
 
     collate_fn = get_dataset_collate_fn(args.dataset)
 
+    if isinstance(dataset, WebDataset) and isinstance(dataset.pipeline[0], SimpleShardList):
+        # Otherwise, the dataset raises an error because there are more shards than workers.
+        dataloader_num_workers = min(args.num_workers, len(dataset.pipeline[0]))
+    else:
+        dataloader_num_workers = args.num_workers
+
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
+        num_workers=dataloader_num_workers,
         collate_fn=collate_fn,
         pin_memory=args.device.type != "cpu",
-        persistent_workers=args.num_workers > 0,
+        persistent_workers=dataloader_num_workers > 0,
     )
 
     train_dataset = build_dataset(
@@ -388,14 +396,20 @@ def main() -> None:
         download=True,
     )
 
+    if isinstance(train_dataset, WebDataset) and isinstance(train_dataset.pipeline[0], SimpleShardList):
+        # Otherwise, the dataset raises an error because there are more shards than workers.
+        train_dataloader_num_workers = min(args.num_workers, len(train_dataset.pipeline[0]))
+    else:
+        train_dataloader_num_workers = args.num_workers
+
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
+        num_workers=train_dataloader_num_workers,
         collate_fn=collate_fn,
         pin_memory=args.device.type != "cpu",
-        persistent_workers=args.num_workers > 0,
+        persistent_workers=train_dataloader_num_workers > 0,
     )
 
     linear_model, classification_results = evaluate(
