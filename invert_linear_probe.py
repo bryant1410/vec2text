@@ -16,7 +16,6 @@ from clip_benchmark.metrics.linear_probe import (
     cosine_lr,
     find_peak,
     infer,
-    train,
 )
 from open_clip.transform import PreprocessCfg, image_transform_v2
 from sklearn.metrics import classification_report
@@ -40,7 +39,16 @@ def get_cpus_per_gpus() -> int:
     return get_cpu_count() // max(torch.cuda.device_count(), 1)
 
 
-def train_multilabel(
+class NormalizedLinear(torch.nn.Linear):
+    """A linear layer with normalized weights."""
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        weight = F.normalize(self.weight, dim=1)
+        return F.linear(input, weight, self.bias)
+
+
+# Like `linear_probe.evaluate` but with support for multilabel and the normalization of the weights.
+def train(
     dataloader: DataLoader,
     input_shape: int,
     output_shape: int,
@@ -50,9 +58,13 @@ def train_multilabel(
     amp: bool,
     device: str,
     seed: int,
+    multilabel: bool = False,
+    normalize_weights: bool = False,
 ) -> torch.nn.Module:
     torch.manual_seed(seed)
-    model = torch.nn.Linear(input_shape, output_shape)
+    model = (NormalizedLinear if normalize_weights else torch.nn.Linear)(
+        input_shape, output_shape
+    )
     devices = [x for x in range(torch.cuda.device_count())]
     model = model.cuda()
     model = torch.nn.DataParallel(model, device_ids=devices)
@@ -61,7 +73,9 @@ def train_multilabel(
         lr=lr,
         weight_decay=weight_decay,
     )
-    criterion = torch.nn.BCEWithLogitsLoss()
+    criterion = (
+        torch.nn.BCEWithLogitsLoss() if multilabel else torch.nn.CrossEntropyLoss()
+    )
 
     len_loader = len(dataloader)
     scheduler = cosine_lr(optimizer, lr, 0.0, epochs * len_loader)
@@ -77,7 +91,11 @@ def train_multilabel(
             optimizer.zero_grad()
             with torch.autocast(device, enabled=amp):
                 pred = model(x)
-                targets = F.one_hot(y, num_classes=output_shape).to(dtype=pred.dtype)
+                targets = (
+                    F.one_hot(y, num_classes=output_shape).to(dtype=pred.dtype)
+                    if multilabel
+                    else y
+                )
                 loss = criterion(pred, targets)
 
             loss.backward()
@@ -124,6 +142,7 @@ def evaluate(
     amp: bool = True,
     verbose: bool = False,
     multilabel: bool = False,
+    normalize_weights: bool = False,
 ) -> tuple[torch.nn.Linear, dict[str, Any]]:
     device = torch.device(device)
 
@@ -344,9 +363,7 @@ def evaluate(
         best_wd = 0
         train_loader = feature_train_loader
 
-    train_fn = train_multilabel if multilabel else train
-
-    linear_model = train_fn(
+    linear_model = train(
         train_loader,
         input_shape,
         output_shape,
@@ -356,6 +373,8 @@ def evaluate(
         amp,
         str(device),
         seed,
+        multilabel=multilabel,
+        normalize_weights=normalize_weights,
     ).module
 
     logits, target = infer(linear_model, feature_test_loader, amp, str(device))
@@ -369,9 +388,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--multilabel", action="store_true")
-
-    # TODO: add support for normalization. Either force the weights to be normalized, or normalize them after.
-    # parser.add_argument("--normalize", action="store_true")
+    parser.add_argument("--normalize-weights", action="store_true")
 
     parser.add_argument(
         "--experiment-dir", default="saves/openclip_vit_b_32_quickgelu_openai_1"
@@ -513,6 +530,7 @@ def main() -> None:
         amp=True,
         verbose=True,
         multilabel=args.multilabel,
+        normalize_weights=args.normalize_weights,
     )
 
     logging.info("Inverting weights…")
