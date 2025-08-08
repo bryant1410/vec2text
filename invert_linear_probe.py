@@ -18,7 +18,7 @@ from clip_benchmark.metrics.linear_probe import (
     infer,
 )
 from open_clip.transform import PreprocessCfg, image_transform_v2
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, r2_score
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from transformers import CLIPProcessor
@@ -77,14 +77,16 @@ def train(
             # Supposing the number of samples per class is similar,
             # we want to give equal weight to the positives and negatives.
             # If we didn't do this, the loss would be dominated by the negatives.
-            pos_weight=torch.full((output_shape,), fill_value=output_shape, device="cuda")
+            pos_weight=torch.full(
+                (output_shape,), fill_value=output_shape, device="cuda"
+            )
         )
         if multilabel
         else torch.nn.CrossEntropyLoss()
     )
 
     len_loader = len(dataloader)
-    scheduler = cosine_lr(optimizer, lr, 0.0, epochs * len_loader)
+    scheduler = cosine_lr(optimizer, lr, len_loader, epochs * len_loader)
 
     for epoch in range(epochs):
         end = time.time()
@@ -384,8 +386,20 @@ def evaluate(
     ).module
 
     logits, target = infer(linear_model, feature_test_loader, amp, str(device))
-    pred = logits.argmax(axis=1)
+
+    if multilabel:
+        pred = logits > 0
+    else:
+        pred = logits.argmax(axis=1)
+
+    if multilabel:
+        target = F.one_hot(target, num_classes=output_shape)
+
     classification_results = classification_report(target, pred, output_dict=True)
+
+    classification_results["r2_score"] = r2_score(
+        target, logits, multioutput="raw_values" if multilabel else "uniform_average"
+    )
 
     return linear_model, classification_results
 
@@ -401,7 +415,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dataset", default="cifar10")
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--num-workers", type=int, default=get_cpus_per_gpus())
+    parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--device", default="cuda" if torch.cuda.is_available() else "cpu"
@@ -524,8 +540,8 @@ def main() -> None:
         fewshot_k=-1,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        lr=1e-3,
-        epochs=10,
+        lr=args.lr,
+        epochs=args.epochs,
         model_id=(
             inversion_model.config.embedder_model_name + "_" + last_checkpoint
         ).replace("/", "_"),
@@ -539,9 +555,19 @@ def main() -> None:
         normalize_weights=args.normalize_weights,
     )
 
+    for k, v in classification_results.items():
+        try:
+            int(k)
+        except ValueError:
+            # If the key is not an integer, it is a metric name.
+            print(f"{k}:", v)
+
     logging.info("Inverting weights…")
     inverted_embeddings = vec2text.invert_embeddings(
-        F.normalize(linear_model.weight) if args.normalize_weights else linear_model.weight, corrector=corrector
+        F.normalize(linear_model.weight)
+        if args.normalize_weights
+        else linear_model.weight,
+        corrector=corrector,
     )
     logging.info("✅ Weights inverted.")
 
