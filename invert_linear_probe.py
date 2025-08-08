@@ -48,17 +48,17 @@ class NormalizedLinear(torch.nn.Linear):
 
 # Like `linear_probe.evaluate` but with support for multilabel and the normalization of the weights.
 def train(
-    dataloader: DataLoader,
-    input_shape: int,
-    output_shape: int,
-    weight_decay: float,
-    lr: float,
-    epochs: int,
-    amp: bool,
-    device: str,
-    seed: int,
-    multilabel: bool = False,
-    normalize_weights: bool = False,
+        dataloader: DataLoader,
+        input_shape: int,
+        output_shape: int,
+        weight_decay: float,
+        lr: float,
+        epochs: int,
+        amp: bool,
+        device: str,
+        seed: int,
+        multilabel: bool = False,
+        normalize_weights: bool = False,
 ) -> torch.nn.Module:
     torch.manual_seed(seed)
     model = (NormalizedLinear if normalize_weights else torch.nn.Linear)(
@@ -132,25 +132,25 @@ def train(
 
 # Like `linear_probe.evaluate` but it returns the model instead.
 def evaluate(
-    model: torch.nn.Module,
-    dataset: str,
-    train_dataloader: DataLoader,
-    dataloader: DataLoader,
-    fewshot_k: int,
-    batch_size: int,
-    num_workers: int,
-    lr: float,
-    epochs: int,
-    model_id: str,
-    seed: int,
-    feature_root: str,
-    device: torch.device | str,
-    val_dataloader: DataLoader | None = None,
-    normalize: bool = True,
-    amp: bool = True,
-    verbose: bool = False,
-    multilabel: bool = False,
-    normalize_weights: bool = False,
+        model: torch.nn.Module,
+        dataset: str,
+        train_dataloader: DataLoader,
+        dataloader: DataLoader,
+        fewshot_k: int,
+        batch_size: int,
+        num_workers: int,
+        lr: float,
+        epochs: int,
+        model_id: str,
+        seed: int,
+        feature_root: str,
+        device: torch.device | str,
+        val_dataloader: DataLoader | None = None,
+        normalize: bool = True,
+        amp: bool = True,
+        verbose: bool = False,
+        multilabel: bool = False,
+        normalize_weights: bool = False,
 ) -> tuple[torch.nn.Linear, dict[str, Any]]:
     device = torch.device(device)
 
@@ -169,7 +169,7 @@ def evaluate(
 
         splits = ["_train", "_val", "_test"]
         for save_str, loader in zip(
-            splits, [train_dataloader, val_dataloader, dataloader]
+                splits, [train_dataloader, val_dataloader, dataloader]
         ):
             if loader is None:
                 continue
@@ -274,8 +274,10 @@ def evaluate(
 
     train_features = features[idxs]
     train_labels = targets[idxs]
+
     feature_train_val_loader = None
     feature_val_loader = None
+
     if val_dataloader is not None:
         features_val = torch.load(os.path.join(feature_dir, "features_val.pt"))
         targets_val = torch.load(os.path.join(feature_dir, "targets_val.pt"))
@@ -487,7 +489,7 @@ def main() -> None:
     collate_fn = get_dataset_collate_fn(args.dataset)
 
     if isinstance(dataset, WebDataset) and isinstance(
-        dataset.pipeline[0], SimpleShardList
+            dataset.pipeline[0], SimpleShardList
     ):
         # Otherwise, the dataset raises an error because there are more shards than workers.
         dataloader_num_workers = min(args.num_workers, len(dataset.pipeline[0]))
@@ -513,7 +515,7 @@ def main() -> None:
     )
 
     if isinstance(train_dataset, WebDataset) and isinstance(
-        train_dataset.pipeline[0], SimpleShardList
+            train_dataset.pipeline[0], SimpleShardList
     ):
         # Otherwise, the dataset raises an error because there are more shards than workers.
         train_dataloader_num_workers = min(
@@ -543,7 +545,7 @@ def main() -> None:
         lr=args.lr,
         epochs=args.epochs,
         model_id=(
-            inversion_model.config.embedder_model_name + "_" + last_checkpoint
+                inversion_model.config.embedder_model_name + "_" + last_checkpoint
         ).replace("/", "_"),
         seed=args.seed,
         feature_root="features",
@@ -572,7 +574,7 @@ def main() -> None:
     logging.info("✅ Weights inverted.")
 
     for i, (class_, inverted_embedding, bias) in enumerate(
-        zip(dataset.classes, inverted_embeddings, linear_model.bias, strict=True)
+            zip(dataset.classes, inverted_embeddings, linear_model.bias, strict=True)
     ):
         class_results = classification_results[str(i)]
         precision = round(class_results["precision"] * 100)
