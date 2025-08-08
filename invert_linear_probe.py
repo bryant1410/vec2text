@@ -2,15 +2,18 @@
 import argparse
 import logging
 import os
+import time
 from typing import Any
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import transformers
 from clip_benchmark.datasets.builder import build_dataset, get_dataset_collate_fn
 from clip_benchmark.metrics.linear_probe import (
     FeatureDataset,
     Featurizer,
+    cosine_lr,
     find_peak,
     infer,
     train,
@@ -37,6 +40,70 @@ def get_cpus_per_gpus() -> int:
     return get_cpu_count() // max(torch.cuda.device_count(), 1)
 
 
+def train_multilabel(
+    dataloader: DataLoader,
+    input_shape: int,
+    output_shape: int,
+    weight_decay: float,
+    lr: float,
+    epochs: int,
+    amp: bool,
+    device: str,
+    seed: int,
+) -> torch.nn.Module:
+    torch.manual_seed(seed)
+    model = torch.nn.Linear(input_shape, output_shape)
+    devices = [x for x in range(torch.cuda.device_count())]
+    model = model.cuda()
+    model = torch.nn.DataParallel(model, device_ids=devices)
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+    )
+    criterion = torch.nn.BCEWithLogitsLoss()
+
+    len_loader = len(dataloader)
+    scheduler = cosine_lr(optimizer, lr, 0.0, epochs * len_loader)
+
+    for epoch in range(epochs):
+        end = time.time()
+        for i, (x, y) in enumerate(dataloader):
+            x, y = x.cuda(), y.cuda()
+            step = i + epoch * len_loader
+            data_time = time.time() - end
+            scheduler(step)
+
+            optimizer.zero_grad()
+            with torch.autocast(device, enabled=amp):
+                pred = model(x)
+                targets = F.one_hot(y, num_classes=output_shape).to(dtype=pred.dtype)
+                loss = criterion(pred, targets)
+
+            loss.backward()
+            optimizer.step()
+
+            batch_time = time.time() - end
+            end = time.time()
+
+            if (i % 20) == 1:
+                num_samples = i * len(x)
+                try:
+                    samples_per_epoch = len(dataloader)
+                    percent_complete = 100.0 * i / len(dataloader)
+                    progress_message = (
+                        f"[{num_samples}/{samples_per_epoch} ({percent_complete:.0f}%)]"
+                    )
+                except TypeError:
+                    progress_message = f"[{num_samples} samples]"
+                print(
+                    f"Train Epoch: {epoch} {progress_message}\t"
+                    f"Loss: {loss.item():.6f}\tData (t) {data_time:.3f}\tBatch (t) {batch_time:.3f}\t"
+                    f"LR {optimizer.param_groups[0]['lr']:.5f}"
+                )
+    return model
+
+
 # Like `linear_probe.evaluate` but it returns the model instead.
 def evaluate(
     model: torch.nn.Module,
@@ -56,6 +123,7 @@ def evaluate(
     normalize: bool = True,
     amp: bool = True,
     verbose: bool = False,
+    multilabel: bool = False,
 ) -> tuple[torch.nn.Linear, dict[str, Any]]:
     device = torch.device(device)
 
@@ -276,7 +344,9 @@ def evaluate(
         best_wd = 0
         train_loader = feature_train_loader
 
-    linear_model = train(
+    train_fn = train_multilabel if multilabel else train
+
+    linear_model = train_fn(
         train_loader,
         input_shape,
         output_shape,
@@ -297,6 +367,11 @@ def evaluate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+
+    parser.add_argument("--multilabel", action="store_true")
+
+    # TODO: add support for normalization. Either force the weights to be normalized, or normalize them after.
+    # parser.add_argument("--normalize", action="store_true")
 
     parser.add_argument(
         "--experiment-dir", default="saves/openclip_vit_b_32_quickgelu_openai_1"
@@ -372,7 +447,9 @@ def main() -> None:
 
     collate_fn = get_dataset_collate_fn(args.dataset)
 
-    if isinstance(dataset, WebDataset) and isinstance(dataset.pipeline[0], SimpleShardList):
+    if isinstance(dataset, WebDataset) and isinstance(
+        dataset.pipeline[0], SimpleShardList
+    ):
         # Otherwise, the dataset raises an error because there are more shards than workers.
         dataloader_num_workers = min(args.num_workers, len(dataset.pipeline[0]))
     else:
@@ -396,9 +473,13 @@ def main() -> None:
         download=True,
     )
 
-    if isinstance(train_dataset, WebDataset) and isinstance(train_dataset.pipeline[0], SimpleShardList):
+    if isinstance(train_dataset, WebDataset) and isinstance(
+        train_dataset.pipeline[0], SimpleShardList
+    ):
         # Otherwise, the dataset raises an error because there are more shards than workers.
-        train_dataloader_num_workers = min(args.num_workers, len(train_dataset.pipeline[0]))
+        train_dataloader_num_workers = min(
+            args.num_workers, len(train_dataset.pipeline[0])
+        )
     else:
         train_dataloader_num_workers = args.num_workers
 
@@ -431,6 +512,7 @@ def main() -> None:
         normalize=True,
         amp=True,
         verbose=True,
+        multilabel=args.multilabel,
     )
 
     logging.info("Inverting weights…")
