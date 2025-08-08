@@ -43,8 +43,7 @@ class NormalizedLinear(torch.nn.Linear):
     """A linear layer with normalized weights."""
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        weight = F.normalize(self.weight, dim=1)
-        return F.linear(input, weight, self.bias)
+        return F.linear(input, F.normalize(self.weight), self.bias)
 
 
 # Like `linear_probe.evaluate` but with support for multilabel and the normalization of the weights.
@@ -542,7 +541,7 @@ def main() -> None:
 
     logging.info("Inverting weights…")
     inverted_embeddings = vec2text.invert_embeddings(
-        linear_model.weight, corrector=corrector
+        F.normalize(linear_model.weight) if args.normalize_weights else linear_model.weight, corrector=corrector
     )
     logging.info("✅ Weights inverted.")
 
