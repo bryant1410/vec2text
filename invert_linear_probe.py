@@ -74,7 +74,14 @@ def train(
         weight_decay=weight_decay,
     )
     criterion = (
-        torch.nn.BCEWithLogitsLoss() if multilabel else torch.nn.CrossEntropyLoss()
+        torch.nn.BCEWithLogitsLoss(
+            # Supposing the number of samples per class is similar,
+            # we want to give equal weight to the positives and negatives.
+            # If we didn't do this, the loss would be dominated by the negatives.
+            pos_weight=torch.full((output_shape,), fill_value=output_shape, device="cuda")
+        )
+        if multilabel
+        else torch.nn.CrossEntropyLoss()
     )
 
     len_loader = len(dataloader)
