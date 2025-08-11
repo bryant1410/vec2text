@@ -3,6 +3,7 @@ import argparse
 import logging
 import os
 import time
+import warnings
 from typing import Any
 
 import numpy as np
@@ -533,13 +534,21 @@ def main() -> None:
         if args.dataset.startswith("wds/")
         else "root"
     )
-    dataset = build_dataset(
-        dataset_name=args.dataset,
-        task="linear_probe",
-        root=root_dir,
-        transform=transform,
-        download=True,
-    )
+    with warnings.catch_warnings():
+        # We suppress a spurious warning. Under the hood, the function calls `wds.WebDataset()` without passing
+        # `shardshuffle`. If it's sharded or not it doesn't matter to us here.
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^WebDataset\(shardshuffle=\.\.\.\) is None; set explicitly to False or a number$",
+            category=UserWarning,
+        )
+        dataset = build_dataset(
+            dataset_name=args.dataset,
+            task="linear_probe",
+            root=root_dir,
+            transform=transform,
+            download=True,
+        )
 
     if (
         args.dataset.startswith("wds/")
@@ -568,13 +577,21 @@ def main() -> None:
         persistent_workers=dataloader_num_workers > 0,
     )
 
-    train_dataset = build_dataset(
-        dataset_name=args.dataset,
-        root=root_dir,
-        transform=transform,
-        split="train",
-        download=True,
-    )
+    with warnings.catch_warnings():
+        # We suppress a spurious warning. Under the hood, the function calls `wds.WebDataset()` without passing
+        # `shardshuffle`. If it's sharded or not it doesn't matter to us here.
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^WebDataset\(shardshuffle=\.\.\.\) is None; set explicitly to False or a number$",
+            category=UserWarning,
+        )
+        train_dataset = build_dataset(
+            dataset_name=args.dataset,
+            root=root_dir,
+            transform=transform,
+            split="train",
+            download=True,
+        )
 
     if (
         args.dataset.startswith("wds/")
