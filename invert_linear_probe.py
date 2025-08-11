@@ -455,12 +455,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-
-    # To log with colors:
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(CustomFormatter())
-    logging.getLogger().addHandler(stream_handler)
+    logging.basicConfig(level=logging.INFO, handlers=[stream_handler])
 
     args = parse_args()
 
