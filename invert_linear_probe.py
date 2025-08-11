@@ -29,6 +29,28 @@ import vec2text
 from vec2text.models.model_utils import ClipTextEmbedder, OpenClipEmbedder
 
 
+class CustomFormatter(logging.Formatter):
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+
+    FORMATS = {
+        logging.DEBUG: grey + format + reset,
+        logging.INFO: grey + format + reset,
+        logging.WARNING: yellow + format + reset,
+        logging.ERROR: red + format + reset,
+        logging.CRITICAL: bold_red + format + reset
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+
 def get_cpu_count() -> int:
     """Returns the number of CPUs available to the process."""
     return len(getattr(os, "sched_getaffinity", lambda _: [])(0)) or os.cpu_count() or 1
@@ -434,6 +456,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
+
+    # To log with colors:
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(CustomFormatter())
+    logging.getLogger().addHandler(stream_handler)
 
     args = parse_args()
 
