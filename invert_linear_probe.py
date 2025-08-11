@@ -35,14 +35,16 @@ class CustomFormatter(logging.Formatter):
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
     reset = "\x1b[0m"
-    format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+    format = (
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+    )
 
     FORMATS = {
         logging.DEBUG: grey + format + reset,
         logging.INFO: grey + format + reset,
         logging.WARNING: yellow + format + reset,
         logging.ERROR: red + format + reset,
-        logging.CRITICAL: bold_red + format + reset
+        logging.CRITICAL: bold_red + format + reset,
     }
 
     def format(self, record: logging.LogRecord) -> str:
@@ -68,26 +70,42 @@ class NormalizedLinear(torch.nn.Linear):
         return F.linear(input, F.normalize(self.weight), self.bias)
 
 
+_WDS_DATASET_TO_SIZE = {
+    ("cars", "train"): 8_144,
+    ("cars", "test"): 8_041,
+    ("vtab-cifar10", "train"): 45_000,
+    ("vtab-cifar10", "test"): 10_000,
+    ("vtab-cifar100", "train"): 45_000,
+    ("vtab-cifar100", "test"): 10_000,
+    ("mnist", "train"): 60_000,
+    ("mnist", "test"): 10_000,
+    ("vtab-eurosat", "train"): 16_200,
+    ("vtab-eurosat", "test"): 5_400,
+    ("vtab-flowers", "test"): 6_149,
+    ("vtab-dtd", "test"): 1_880,
+}
+
+
 # Like `linear_probe.evaluate` but with support for multilabel and the normalization of the weights.
 def train(
-        dataloader: DataLoader,
-        input_shape: int,
-        output_shape: int,
-        weight_decay: float,
-        lr: float,
-        epochs: int,
-        amp: bool,
-        device: str,
-        seed: int,
-        multilabel: bool = False,
-        normalize_weights: bool = False,
+    dataloader: DataLoader,
+    input_shape: int,
+    output_shape: int,
+    weight_decay: float,
+    lr: float,
+    epochs: int,
+    amp: bool,
+    device: str,
+    seed: int,
+    multilabel: bool = False,
+    normalize_weights: bool = False,
 ) -> torch.nn.Module:
     torch.manual_seed(seed)
     model = (NormalizedLinear if normalize_weights else torch.nn.Linear)(
         input_shape, output_shape
     )
-    devices = [x for x in range(torch.cuda.device_count())]
-    model = model.cuda()
+    devices = range(torch.cuda.device_count()) if device.startswith("cuda") else [0]
+    model = model.to(device)
     model = torch.nn.DataParallel(model, device_ids=devices)
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -100,7 +118,7 @@ def train(
             # we want to give equal weight to the positives and negatives.
             # If we didn't do this, the loss would be dominated by the negatives.
             pos_weight=torch.full(
-                (output_shape,), fill_value=output_shape, device="cuda"
+                (output_shape,), fill_value=output_shape, device=device
             )
         )
         if multilabel
@@ -113,7 +131,7 @@ def train(
     for epoch in range(epochs):
         end = time.time()
         for i, (x, y) in enumerate(dataloader):
-            x, y = x.cuda(), y.cuda()
+            x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
             step = i + epoch * len_loader
             data_time = time.time() - end
             scheduler(step)
@@ -154,25 +172,25 @@ def train(
 
 # Like `linear_probe.evaluate` but it returns the model instead.
 def evaluate(
-        model: torch.nn.Module,
-        dataset: str,
-        train_dataloader: DataLoader,
-        dataloader: DataLoader,
-        fewshot_k: int,
-        batch_size: int,
-        num_workers: int,
-        lr: float,
-        epochs: int,
-        model_id: str,
-        seed: int,
-        feature_root: str,
-        device: torch.device | str,
-        val_dataloader: DataLoader | None = None,
-        normalize: bool = True,
-        amp: bool = True,
-        verbose: bool = False,
-        multilabel: bool = False,
-        normalize_weights: bool = False,
+    model: torch.nn.Module,
+    dataset: str,
+    train_dataloader: DataLoader,
+    dataloader: DataLoader,
+    fewshot_k: int,
+    batch_size: int,
+    num_workers: int,
+    lr: float,
+    epochs: int,
+    model_id: str,
+    seed: int,
+    feature_root: str,
+    device: torch.device | str,
+    val_dataloader: DataLoader | None = None,
+    normalize: bool = True,
+    amp: bool = True,
+    verbose: bool = False,
+    multilabel: bool = False,
+    normalize_weights: bool = False,
 ) -> tuple[torch.nn.Linear, dict[str, Any]]:
     device = torch.device(device)
 
@@ -180,18 +198,18 @@ def evaluate(
     feature_dir = os.path.join(feature_root, model_id, dataset)
     os.makedirs(feature_dir, exist_ok=True)
 
-    featurizer = Featurizer(model, normalize).to(device)
+    featurizer = Featurizer(model, normalize).to(device, non_blocking=True)
     path = os.path.join(feature_dir, "targets_train.pt")
     if os.path.exists(path):
         logging.info(f"Using the existing pre-computed features from {path}.")
     else:
         # now we have to cache the features
-        devices = [x for x in range(torch.cuda.device_count())]
+        devices = range(torch.cuda.device_count()) if device.type == "cuda" else [0]
         featurizer = torch.nn.DataParallel(featurizer, device_ids=devices)
 
         splits = ["_train", "_val", "_test"]
         for save_str, loader in zip(
-                splits, [train_dataloader, val_dataloader, dataloader]
+            splits, [train_dataloader, val_dataloader, dataloader]
         ):
             if loader is None:
                 continue
@@ -201,7 +219,7 @@ def evaluate(
             num_cached = 0
             with torch.no_grad():
                 for images, target in tqdm(loader, desc="Precomputing features"):
-                    images = images.to(device)
+                    images = images.to(device, non_blocking=True)
 
                     with torch.autocast(device.type, enabled=amp):
                         feature = featurizer(images)
@@ -349,7 +367,7 @@ def evaluate(
     )
     input_shape = features[0].shape[0]
 
-    if len(targets) == 1:
+    if len(targets.shape) == 1:
         output_shape = targets.max().item() + 1
     else:
         output_shape = targets.shape[-1]
@@ -523,10 +541,17 @@ def main() -> None:
         download=True,
     )
 
+    if (
+        args.dataset.startswith("wds/")
+        and (dataset_len := _WDS_DATASET_TO_SIZE.get((args.dataset.removeprefix("wds/"), "test")))
+        is not None
+    ):
+        dataset = dataset.with_length(dataset_len)
+
     collate_fn = get_dataset_collate_fn(args.dataset)
 
     if isinstance(dataset, WebDataset) and isinstance(
-            dataset.pipeline[0], SimpleShardList
+        dataset.pipeline[0], SimpleShardList
     ):
         # Otherwise, the dataset raises an error because there are more shards than workers.
         dataloader_num_workers = min(args.num_workers, len(dataset.pipeline[0]))
@@ -551,8 +576,15 @@ def main() -> None:
         download=True,
     )
 
+    if (
+        args.dataset.startswith("wds/")
+        and (train_dataset_len := _WDS_DATASET_TO_SIZE.get((args.dataset.removeprefix("wds/"), "train")))
+        is not None
+    ):
+        train_dataset = train_dataset.with_length(train_dataset_len)
+
     if isinstance(train_dataset, WebDataset) and isinstance(
-            train_dataset.pipeline[0], SimpleShardList
+        train_dataset.pipeline[0], SimpleShardList
     ):
         # Otherwise, the dataset raises an error because there are more shards than workers.
         train_dataloader_num_workers = min(
@@ -582,7 +614,7 @@ def main() -> None:
         lr=args.lr,
         epochs=args.epochs,
         model_id=(
-                inversion_model.config.embedder_model_name + "_" + last_checkpoint
+            inversion_model.config.embedder_model_name + "_" + last_checkpoint
         ).replace("/", "_"),
         seed=args.seed,
         feature_root="features",
@@ -602,23 +634,51 @@ def main() -> None:
             print(f"{k}:", v)
 
     logging.info("Inverting weights…")
+    with torch.inference_mode():
+        normalized_weights = (
+            F.normalize(linear_model.weight)
+            if args.normalize_weights
+            else linear_model.weight
+        )
     inverted_embeddings = vec2text.invert_embeddings(
-        F.normalize(linear_model.weight)
-        if args.normalize_weights
-        else linear_model.weight,
-        corrector=corrector,
+        normalized_weights, corrector=corrector
     )
     logging.info("✅ Weights inverted.")
 
-    for i, (class_, inverted_embedding, bias) in enumerate(
-            zip(dataset.classes, inverted_embeddings, linear_model.bias, strict=True)
+    logging.info(
+        "Computing the similarity between the weights and the embeddings of the inverted weights…"
+    )
+    regenerated_inputs = inversion_model.embedder_tokenizer(
+        inverted_embeddings,
+        return_tensors="pt",
+        max_length=inversion_model.config.max_seq_length,
+        truncation=True,
+        padding="max_length",
+    )
+    with torch.inference_mode():
+        with torch.autocast(args.device.type):
+            regenerated_embeddings = model(
+                regenerated_inputs.input_ids.to(args.device, non_blocking=True)
+            ).pooler_output
+            similarities = (normalized_weights * regenerated_embeddings).sum(dim=-1)
+    logging.info("✅ Similarity computed.")
+
+    for i, (class_, inverted_embedding, bias, similarity) in enumerate(
+        zip(
+            dataset.classes,
+            inverted_embeddings,
+            linear_model.bias,
+            similarities,
+            strict=True,
+        )
     ):
         class_results = classification_results[str(i)]
         precision = round(class_results["precision"] * 100)
         recall = round(class_results["recall"] * 100)
+        similarity_percent = round(similarity.item() * 100)
         print(
             f"{i} - Class: {class_} - P: {precision:3d}% - R: {recall:3d}% - Bias: {bias}"
-            f' - Weight to text: "{inverted_embedding}"'
+            f' - Weight to text: "{inverted_embedding}" (S: {similarity_percent:3d}%)'
         )
 
 
