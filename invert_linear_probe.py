@@ -123,7 +123,7 @@ def train(
                 pred = model(x)
                 targets = (
                     F.one_hot(y, num_classes=output_shape).to(dtype=pred.dtype)
-                    if multilabel
+                    if multilabel and len(y.shape) == 1
                     else y
                 )
                 loss = criterion(pred, targets)
@@ -273,29 +273,36 @@ def evaluate(
     features = torch.load(os.path.join(feature_dir, "features_train.pt"))
     targets = torch.load(path)
 
-    # second, make a dataloader with k features per class. if k = -1, use all features.
-    length = len(features)
-    perm = [p.item() for p in torch.randperm(length)]
-    idxs = []
-    counts = {}
-    num_classes = 0
+    if len(targets.shape) > 1:
+        if fewshot_k >= 0:
+            raise ValueError("`fewshot_k` must be -1 for multilabel datasets.")
 
-    for p in perm:
-        target = targets[p].item()
-        if target not in counts:
-            counts[target] = 0
-            num_classes += 1
+        train_features = features
+        train_labels = targets
+    else:
+        # second, make a dataloader with k features per class. if k = -1, use all features.
+        length = len(features)
+        perm = [p.item() for p in torch.randperm(length)]
+        idxs = []
+        counts = {}
+        num_classes = 0
 
-        if fewshot_k < 0 or counts[target] < fewshot_k:
-            counts[target] += 1
-            idxs.append(p)
+        for p in perm:
+            target = targets[p].item()
+            if target not in counts:
+                counts[target] = 0
+                num_classes += 1
 
-    for c in counts:
-        if fewshot_k > 0 and counts[c] != fewshot_k:
-            raise TypeError("insufficient data for this eval")
+            if fewshot_k < 0 or counts[target] < fewshot_k:
+                counts[target] += 1
+                idxs.append(p)
 
-    train_features = features[idxs]
-    train_labels = targets[idxs]
+        for c in counts:
+            if fewshot_k > 0 and counts[c] != fewshot_k:
+                raise TypeError("insufficient data for this eval")
+
+        train_features = features[idxs]
+        train_labels = targets[idxs]
 
     feature_train_val_loader = None
     feature_val_loader = None
@@ -340,7 +347,13 @@ def evaluate(
         num_workers=num_workers,
         pin_memory=True,
     )
-    input_shape, output_shape = features[0].shape[0], targets.max().item() + 1
+    input_shape = features[0].shape[0]
+
+    if len(targets) == 1:
+        output_shape = targets.max().item() + 1
+    else:
+        output_shape = targets.shape[-1]
+
     if val_dataloader is not None:
         # perform openAI-like hyperparameter sweep
         # https://arxiv.org/pdf/2103.00020.pdf A.3
@@ -416,7 +429,7 @@ def evaluate(
     else:
         pred = logits.argmax(axis=1)
 
-    if multilabel:
+    if multilabel and len(target.shape) == 1:
         target = F.one_hot(target, num_classes=output_shape)
 
     classification_results = classification_report(target, pred, output_dict=True)
