@@ -552,7 +552,11 @@ def main() -> None:
 
     if (
         args.dataset.startswith("wds/")
-        and (dataset_len := _WDS_DATASET_TO_SIZE.get((args.dataset.removeprefix("wds/"), "test")))
+        and (
+            dataset_len := _WDS_DATASET_TO_SIZE.get(
+                (args.dataset.removeprefix("wds/").replace("/", "-"), "test")
+            )
+        )
         is not None
     ):
         dataset = dataset.with_length(dataset_len)
@@ -595,7 +599,11 @@ def main() -> None:
 
     if (
         args.dataset.startswith("wds/")
-        and (train_dataset_len := _WDS_DATASET_TO_SIZE.get((args.dataset.removeprefix("wds/"), "train")))
+        and (
+            train_dataset_len := _WDS_DATASET_TO_SIZE.get(
+                (args.dataset.removeprefix("wds/").replace("/", "-"), "train")
+            )
+        )
         is not None
     ):
         train_dataset = train_dataset.with_length(train_dataset_len)
