@@ -218,8 +218,15 @@ def evaluate(
             targets = []
             num_batches_tracked = 0
             num_cached = 0
-            with torch.no_grad():
-                for images, target in tqdm(loader, desc="Precomputing features"):
+            with (
+                torch.inference_mode(),
+                tqdm(
+                    unit=" images",
+                    total=len(loader.dataset),
+                    desc="Precomputing features",
+                ) as p_bar,
+            ):
+                for images, target in loader:
                     images = images.to(device, non_blocking=True)
 
                     with torch.autocast(device.type, enabled=amp):
@@ -248,6 +255,8 @@ def evaluate(
                         num_cached += 1
                         features = []
                         targets = []
+
+                    p_bar.update(len(images))
 
             if len(features) > 0:
                 features = torch.cat(features)
